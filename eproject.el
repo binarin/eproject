@@ -323,6 +323,15 @@ become project attributes."
 (define-project-type generic-git (generic) (look-for ".git")
   :irrelevant-files ("^[.]" "^[#]" ".git/"))
 
+(define-project-type generic-hg (generic) (look-for ".hg")
+  :irrelevant-files ("^[.]" "^[#]" ".hg/"))
+
+(define-project-type generic-bzr (generic) (look-for ".bzr")
+  :irrelevant-files ("^[.]" "^[#]" ".bzr/"))
+
+(define-project-type generic-darcs (generic) (look-for "_darcs")
+  :irrelevant-files ("^[.]" "^[#]" "_darcs/"))
+
 (defun eproject--type-info (type)
   (or
    (assoc type eproject-project-types)
@@ -352,13 +361,13 @@ what to look for.  Some examples:
     (otherwise (error "Don't know how to handle %s in LOOK-FOR!" type))))
 
 (defun eproject--buffer-file-name ()
-  (cond ((buffer-file-name))
-        ((eq major-mode 'dired-mode)
-         (expand-file-name (if (consp dired-directory)
-                               (car dired-directory)
-                             dired-directory)))
-        ((and (derived-mode-p 'magit-status-mode)
-              default-directory))))
+  (or (buffer-file-name)
+      (and (derived-mode-p 'dired-mode)
+           (expand-file-name (if (consp dired-directory)
+                                 (car dired-directory)
+                               dired-directory)))
+      (and (derived-mode-p 'magit-status-mode)
+           default-directory)))
 
 (defun* eproject--run-project-selector (type &optional (file (eproject--buffer-file-name)))
   "Run the selector associated with project type TYPE."
@@ -595,18 +604,20 @@ else through unchanged."
 
 (defun eproject--search-directory-tree (directory file-regexp ignore-regexp)
   (loop for file in (directory-files (file-name-as-directory directory) t "^[^.]" t)
-        when (and (not (file-directory-p file))
-                  (not (string-match ignore-regexp file))
-                  (not (string-match ignore-regexp (file-name-nondirectory file)))
-                  (string-match file-regexp file))
-        collect file into files
-        when (file-directory-p file)
-        collect file into directories
+        unless (string-match ignore-regexp file)
+          if (not (file-directory-p file))
+            when (and (not (string-match ignore-regexp
+                                         (file-name-nondirectory file)))
+                      (string-match file-regexp file))
+              collect file into files end
+          else
+            collect file into directories
         finally return
           (nconc files
                  (loop for dir in directories
                        nconc (eproject--search-directory-tree dir file-regexp
                                                               ignore-regexp)))))
+
 (defun eproject-assert-type (type)
   "Assert that the current buffer is in a project of type TYPE."
   (when (not (memq type (eproject--linearized-isa (eproject-type) t)))
